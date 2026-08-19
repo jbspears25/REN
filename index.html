@@ -1,1 +1,43 @@
- 
+<!doctype html>
+<html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>REN</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="config.js"></script>
+<style>
+*{box-sizing:border-box}body{margin:0;background:#0d0d0f;color:#f5f5f5;font-family:system-ui,-apple-system,sans-serif}
+main{max-width:900px;margin:auto;padding:18px}.top{display:flex;justify-content:space-between;align-items:center;margin-bottom:18px}
+.logo{font-size:30px;font-weight:900;letter-spacing:4px}.muted{color:#999}.card{background:#17171a;border:1px solid #2a2a2e;border-radius:18px;padding:18px;margin:12px 0}
+input,select,button{font:inherit;border-radius:12px;border:1px solid #333;padding:11px;background:#101014;color:#fff}
+button{background:#eee;color:#111;font-weight:800;cursor:pointer}.row{display:flex;gap:8px;flex-wrap:wrap}.row input{flex:1;min-width:180px}
+.msg{padding:10px 13px;border-radius:14px;margin:7px 0;max-width:88%}.user{margin-left:auto;background:#eee;color:#111}.ren{background:#24242a}
+#chat{min-height:180px;max-height:360px;overflow:auto}.memory,.task{padding:10px;border:1px solid #303035;border-radius:12px;margin:8px 0}
+.hidden{display:none}.status{font-size:12px;color:#8bd48b}
+</style></head><body><main>
+<div class="top"><div class="logo">REN</div><button id="logout" class="hidden">Log out</button></div>
+<section id="auth" class="card"><h2>Enter REN</h2><p class="muted">One account. Same REN on iPhone and Chromebook.</p>
+<div class="row"><input id="email" type="email" placeholder="Email"><input id="password" type="password" placeholder="Password"><button id="signup">Create account</button><button id="login">Log in</button></div><p id="authMsg" class="muted"></p></section>
+<div id="app" class="hidden">
+<section class="card"><h2>Good to see you.</h2><p class="muted">God is Lord. You are the steward. REN is the tool.</p><p class="status">● Memory connection active</p></section>
+<section class="card"><h2>Talk to REN</h2><div id="chat"><div class="msg ren">I'm connected to your REN workspace. Tell me what you're working on.</div></div>
+<div class="row"><input id="prompt" placeholder="Ask REN..."><button id="send">Send</button></div><p class="muted">The secure AI brain is the next layer. Your memory and tasks are connected.</p></section>
+<section class="card"><h2>Remember</h2><div class="row"><select id="domain"><option>identity</option><option>faith</option><option>rgu</option><option>renegade</option><option>treasury</option><option>life</option></select><input id="memory" placeholder="Something REN should remember"><button id="saveMemory">Save</button></div><div id="memories"></div></section>
+<section class="card"><h2>Tasks</h2><div class="row"><input id="task" placeholder="Add a task"><button id="addTask">Add</button></div><div id="tasks"></div></section>
+</div></main>
+<script>
+const cfg=window.REN_CONFIG||{};
+if(!cfg.SUPABASE_URL||!cfg.SUPABASE_ANON_KEY){document.body.innerHTML='<main><section class="card"><h2>REN setup incomplete</h2><p>config.js is missing the Supabase Project URL or Publishable key.</p></section></main>';throw new Error("Missing REN_CONFIG")}
+const sb=supabase.createClient(cfg.SUPABASE_URL,cfg.SUPABASE_ANON_KEY),$=id=>document.getElementById(id);let user=null;
+async function init(){const {data:{session}}=await sb.auth.getSession();setSession(session);sb.auth.onAuthStateChange((_e,s)=>setSession(s))}
+function setSession(s){user=s?.user||null;$('auth').classList.toggle('hidden',!!user);$('app').classList.toggle('hidden',!user);$('logout').classList.toggle('hidden',!user);if(user){loadMemories();loadTasks()}}
+$('signup').onclick=async()=>{const email=$('email').value.trim(),password=$('password').value;if(!email||password.length<6){$('authMsg').textContent='Enter an email and password of at least 6 characters.';return}const {data,error}=await sb.auth.signUp({email,password});$('authMsg').textContent=error?error.message:(data.session?'Account created and logged in.':'Account created. Check your email if confirmation is enabled.')};
+$('login').onclick=async()=>{const {error}=await sb.auth.signInWithPassword({email:$('email').value.trim(),password:$('password').value});$('authMsg').textContent=error?error.message:'Logged in.'};$('logout').onclick=()=>sb.auth.signOut();
+async function loadMemories(){const {data,error}=await sb.from('memories').select('*').order('created_at',{ascending:false});if(error){$('memories').textContent=error.message;return}$('memories').innerHTML=data.map(x=>'<div class="memory"><b>'+esc(x.domain)+'</b><br>'+esc(x.content)+'</div>').join('')||'<p class="muted">No saved memories yet.</p>'}
+$('saveMemory').onclick=async()=>{const content=$('memory').value.trim();if(!content)return;const {error}=await sb.from('memories').insert({user_id:user.id,domain:$('domain').value,content});if(error)alert(error.message);else{$('memory').value='';loadMemories()}};
+async function loadTasks(){const {data,error}=await sb.from('tasks').select('*').order('created_at',{ascending:false});if(error){$('tasks').textContent=error.message;return}$('tasks').innerHTML=data.map(x=>'<div class="task"><label><input type="checkbox" '+(x.completed?'checked':'')+' onchange="toggleTask(\''+x.id+'\',this.checked)"> '+esc(x.title)+'</label></div>').join('')||'<p class="muted">No tasks yet.</p>'}
+$('addTask').onclick=async()=>{const title=$('task').value.trim();if(!title)return;const {error}=await sb.from('tasks').insert({user_id:user.id,title});if(error)alert(error.message);else{$('task').value='';loadTasks()}};
+window.toggleTask=async(id,completed)=>{await sb.from('tasks').update({completed}).eq('id',id);loadTasks()};
+$('send').onclick=send;$('prompt').addEventListener('keydown',e=>{if(e.key==='Enter')send()});
+function send(){const t=$('prompt').value.trim();if(!t)return;$('chat').innerHTML+='<div class="msg user">'+esc(t)+'</div>';let r="I'm connected to your REN memory and task system. The secure AI brain is the next layer.";const q=t.toLowerCase();if(q.includes('god')||q.includes('bible'))r="I can organize Scripture and help you think through biblical principles, but I won't claim to speak for God. Pray, read the Word, and use wisdom.";if(q.includes('rgu'))r="Your RGU information belongs in the RGU memory domain. I can retrieve it once saved.";if(q.includes('task')||q.includes('today'))r="Check your Tasks section for your current work. The AI planning layer is next.";$('chat').innerHTML+='<div class="msg ren">'+r+'</div>';$('chat').scrollTop=$('chat').scrollHeight;$('prompt').value=''}
+function esc(s){return String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]))}init();
+</script></body></html>
